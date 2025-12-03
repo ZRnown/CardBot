@@ -140,6 +140,11 @@ export async function createEpusdtTransactionForUser(params: { userId: number; a
 
   const baseUrl = (env.EPUSDT_BASE_URL || '').replace(/\/$/, '')
   if (!baseUrl) throw new Error('Missing EPUSDT_BASE_URL configuration')
+  
+  const token = (env.EPUSDT_TOKEN || '').trim()
+  if (!token) {
+    throw new Error('Missing EPUSDT_TOKEN configuration. Please set EPUSDT_TOKEN environment variable.')
+  }
   const notifyUrl = (() => {
     if (params.notifyUrl) return params.notifyUrl
     if (env.EPUSDT_NOTIFY_URL && env.EPUSDT_NOTIFY_URL.trim()) return env.EPUSDT_NOTIFY_URL.trim()
@@ -208,20 +213,14 @@ export async function createEpusdtTransactionForUser(params: { userId: number; a
       }, 10000)
       try {
         // 构建请求头，包含 token
-        const token = env.EPUSDT_TOKEN
-        if (!token) {
-          throw new Error('Missing EPUSDT_TOKEN configuration')
-        }
+        // Epusdt API 需要在请求头中传递 token
+        // 根据 Epusdt 标准实现，通常使用 Authorization 头或 token 头
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'token': token,
         }
-        // Epusdt API 通常需要在请求头中传递 token
-        // 尝试多种常见的 token 传递方式
-        headers['Authorization'] = `Bearer ${token}`
-        // 同时添加自定义头作为备选
-        headers['X-Token'] = token
-        headers['token'] = token
         
         const res = await fetch(`${baseUrl}/api/v1/order/create-transaction`, {
           method: 'POST',
