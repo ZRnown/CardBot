@@ -177,22 +177,33 @@ export async function createEpusdtTransactionForUser(params: { userId: number; a
     amount = Number((Number(params.amount) * rate).toFixed(2))
   }
 
+  // 构建请求参数，确保签名和请求体一致
+  // 根据文档，redirect_url 是可选的，如果为空则不参与签名
   const requestPayload: Signable = {
     order_id: orderId,
     amount: normalizeAmount(amount),
     notify_url: notifyUrl,
-    redirect_url: redirectUrl || '',
   }
+  // 只有当 redirect_url 有值时才添加到签名参数中
+  if (redirectUrl && redirectUrl.trim()) {
+    requestPayload.redirect_url = redirectUrl.trim()
+  }
+  
   const signSource = buildSignSource(requestPayload)
   const primarySig = epusdtSign(requestPayload)
   const altSigToken = epusdtSign(requestPayload, env.EPUSDT_TOKEN, 'amp_token')
   const altSigKey = epusdtSign(requestPayload, env.EPUSDT_TOKEN, 'amp_key')
-  let body = {
+  
+  // 构建请求体，确保与签名参数一致
+  let body: any = {
     order_id: requestPayload.order_id,
     amount: requestPayload.amount,
     notify_url: requestPayload.notify_url,
-    redirect_url: redirectUrl,
     signature: primarySig,
+  }
+  // 只有当 redirect_url 有值时才添加到请求体中
+  if (requestPayload.redirect_url) {
+    body.redirect_url = requestPayload.redirect_url
   }
 
   try {
