@@ -19,19 +19,22 @@ export function getDb() {
   return pool
 }
 
+async function tableExists(db: mysql.Pool, tableName: string): Promise<boolean> {
+  const [rows] = await db.query<any[]>(
+    "SELECT COUNT(*) as c FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?",
+    [tableName],
+  )
+  return (rows as any)[0]?.c > 0
+}
+
 async function ensureSchema() {
   if (!ensurePromise) {
     ensurePromise = (async () => {
       const db = getDb()
       
-      // 首先检查 users 表是否存在
-      const [tableCheck] = await db.query<any[]>(
-        "SELECT COUNT(*) as c FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users'",
-      )
-      const tableExists = (tableCheck as any)[0]?.c > 0
-      
-      if (!tableExists) {
-        // 如果表不存在，创建完整的 users 表
+      // 确保 users 表存在
+      const usersExists = await tableExists(db, 'users')
+      if (!usersExists) {
         await db.query(`
           CREATE TABLE IF NOT EXISTS users (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -44,11 +47,6 @@ async function ensureSchema() {
             UNIQUE INDEX uniq_users_api_token (api_token)
           ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         `)
-        
-        // 为现有记录生成 api_token（虽然表刚创建时应该没有记录，但为了安全起见）
-        await db.query(
-          "UPDATE `users` SET `api_token` = SUBSTRING(REPLACE(UUID(), '-', ''), 1, 32) WHERE `api_token` IS NULL OR `api_token` = ''",
-        )
       } else {
         // 表存在，检查 api_token 列是否存在
         const [rows] = await db.query<any[]>(
@@ -73,6 +71,80 @@ async function ensureSchema() {
             await db.query("CREATE UNIQUE INDEX `uniq_users_api_token` ON `users` (`api_token`)")
           } catch (_) {}
         }
+      }
+      
+      // 确保 products 表存在
+      const productsExists = await tableExists(db, 'products')
+      if (!productsExists) {
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS products (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(191) NOT NULL UNIQUE,
+            price DECIMAL(18,2) NOT NULL,
+            category VARCHAR(191) NOT NULL,
+            sub_category VARCHAR(255) NOT NULL DEFAULT '',
+            description TEXT NULL,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            sort_order INT NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_category (category),
+            INDEX idx_is_active (is_active)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `)
+      }
+      
+      // 确保 product_keys 表存在
+      const productKeysExists = await tableExists(db, 'product_keys')
+      if (!productKeysExists) {
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS product_keys (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            product_id INT NOT NULL,
+            key_value TEXT NOT NULL,
+            is_sold TINYINT(1) NOT NULL DEFAULT 0,
+            sold_to_user_id INT NULL,
+            sold_at TIMESTAMP NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_product_id (product_id),
+            INDEX idx_is_sold (is_sold),
+            INDEX idx_product_sold (product_id, is_sold)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `)
+      }
+      
+      // 确保 orders 表存在
+      const ordersExists = await tableExists(db, 'orders')
+      if (!ordersExists) {
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS orders (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            product_key_id INT NOT NULL,
+            amount DECIMAL(18,2) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_user_id (user_id),
+            INDEX idx_product_key_id (product_key_id),
+            INDEX idx_created_at (created_at)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `)
+      }
+      
+      // 确保 transactions 表存在
+      const transactionsExists = await tableExists(db, 'transactions')
+      if (!transactionsExists) {
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS transactions (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            type VARCHAR(50) NOT NULL,
+            amount DECIMAL(18,2) NOT NULL,
+            description TEXT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_user_id (user_id),
+            INDEX idx_type (type),
+            INDEX idx_created_at (created_at)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `)
       }
     })()
   }
