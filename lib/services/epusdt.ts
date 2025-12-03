@@ -207,9 +207,25 @@ export async function createEpusdtTransactionForUser(params: { userId: number; a
         try { ac.abort() } catch (_) {}
       }, 10000)
       try {
+        // 构建请求头，包含 token
+        const token = env.EPUSDT_TOKEN
+        if (!token) {
+          throw new Error('Missing EPUSDT_TOKEN configuration')
+        }
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        }
+        // Epusdt API 通常需要在请求头中传递 token
+        // 尝试多种常见的 token 传递方式
+        headers['Authorization'] = `Bearer ${token}`
+        // 同时添加自定义头作为备选
+        headers['X-Token'] = token
+        headers['token'] = token
+        
         const res = await fetch(`${baseUrl}/api/v1/order/create-transaction`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          headers,
           body: JSON.stringify(body),
           signal: ac.signal,
         })
