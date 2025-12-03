@@ -213,11 +213,14 @@ export async function createEpusdtTransactionForUser(params: { userId: number; a
         try { ac.abort() } catch (_) {}
       }, 10000)
       try {
-        // 根据 Epusdt 文档，不需要在请求头中传递 token
-        // token 只用于生成签名，签名在请求体中传递
+        // Epusdt API 需要在请求头中传递 token
+        // 根据实际错误信息，API 期望在请求头中有 token
+        // 根据常见的 API 实现，通常使用 Authorization 头
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          // 尝试 Bearer 格式（最常见的 API 认证格式）
+          'Authorization': `Bearer ${token}`,
         }
         
         const res = await fetch(`${baseUrl}/api/v1/order/create-transaction`, {
