@@ -224,15 +224,11 @@ export async function createEpusdtTransactionForUser(params: { userId: number; a
         try { ac.abort() } catch (_) {}
       }, 10000)
       try {
-        // Epusdt API 需要在请求头中传递 token
-        // 根据错误信息变化（从"请求未携带token"到"token格式错误"），说明需要 token 但格式不对
-        // 尝试使用常见的 API token 头名称
+        // 根据 Epusdt API 文档，不需要在请求头中传递 token
+        // token (api_auth_token) 只用于生成签名，签名在请求体中传递
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
           Accept: 'application/json',
-          // Epusdt 可能使用 X-Api-Token 或 token 作为请求头名称
-          'X-Api-Token': token,
-          'token': token,
         }
         
         const res = await fetch(`${baseUrl}/api/v1/order/create-transaction`, {
