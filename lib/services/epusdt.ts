@@ -230,7 +230,15 @@ export async function createEpusdtTransactionForUser(params: { userId: number; a
           'Content-Type': 'application/json',
           Accept: 'application/json',
         }
-        
+
+        try {
+          console.info('[epusdt:create] outgoing request', {
+            url: `${baseUrl}/api/v1/order/create-transaction`,
+            headers,
+            body,
+          })
+        } catch (_) {}
+
         const res = await fetch(`${baseUrl}/api/v1/order/create-transaction`, {
           method: 'POST',
           headers,
