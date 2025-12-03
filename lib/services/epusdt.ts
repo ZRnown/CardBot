@@ -71,7 +71,8 @@ export function epusdtSign(params: Signable, token = env.EPUSDT_TOKEN, mode: Sig
   const source = buildSignSource(params)
   const md5 = crypto.createHash('md5')
   const material = mode === 'concat' ? (source + token) : mode === 'amp_token' ? (source + `&token=${token}`) : (source + `&key=${token}`)
-  return md5.update(material, 'utf8').digest('hex')
+  // 根据文档，MD5 后需要转换为小写
+  return md5.update(material, 'utf8').digest('hex').toLowerCase()
 }
 
 export function verifyEpusdtSignature(payload: Signable, signature: string | null | undefined, token = env.EPUSDT_TOKEN) {
@@ -212,14 +213,11 @@ export async function createEpusdtTransactionForUser(params: { userId: number; a
         try { ac.abort() } catch (_) {}
       }, 10000)
       try {
-        // 构建请求头，包含 token
-        // Epusdt API 需要在请求头中传递 token
-        // 根据 Epusdt 标准实现，通常使用 Authorization 头或 token 头
+        // 根据 Epusdt 文档，不需要在请求头中传递 token
+        // token 只用于生成签名，签名在请求体中传递
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
           Accept: 'application/json',
-          'Authorization': `Bearer ${token}`,
-          'token': token,
         }
         
         const res = await fetch(`${baseUrl}/api/v1/order/create-transaction`, {
