@@ -71,8 +71,7 @@ export function epusdtSign(params: Signable, token = env.EPUSDT_TOKEN, mode: Sig
   const source = buildSignSource(params)
   const md5 = crypto.createHash('md5')
   const material = mode === 'concat' ? (source + token) : mode === 'amp_token' ? (source + `&token=${token}`) : (source + `&key=${token}`)
-  // 根据文档，MD5 后需要转换为小写
-  return md5.update(material, 'utf8').digest('hex').toLowerCase()
+  return md5.update(material, 'utf8').digest('hex')
 }
 
 export function verifyEpusdtSignature(payload: Signable, signature: string | null | undefined, token = env.EPUSDT_TOKEN) {
@@ -141,11 +140,6 @@ export async function createEpusdtTransactionForUser(params: { userId: number; a
 
   const baseUrl = (env.EPUSDT_BASE_URL || '').replace(/\/$/, '')
   if (!baseUrl) throw new Error('Missing EPUSDT_BASE_URL configuration')
-  
-  const token = (env.EPUSDT_TOKEN || '').trim()
-  if (!token) {
-    throw new Error('Missing EPUSDT_TOKEN configuration. Please set EPUSDT_TOKEN environment variable.')
-  }
   const notifyUrl = (() => {
     if (params.notifyUrl) return params.notifyUrl
     if (env.EPUSDT_NOTIFY_URL && env.EPUSDT_NOTIFY_URL.trim()) return env.EPUSDT_NOTIFY_URL.trim()
@@ -177,33 +171,22 @@ export async function createEpusdtTransactionForUser(params: { userId: number; a
     amount = Number((Number(params.amount) * rate).toFixed(2))
   }
 
-  // 构建请求参数，确保签名和请求体一致
-  // 根据文档，redirect_url 是可选的，如果为空则不参与签名
   const requestPayload: Signable = {
     order_id: orderId,
     amount: normalizeAmount(amount),
     notify_url: notifyUrl,
+    redirect_url: redirectUrl || '',
   }
-  // 只有当 redirect_url 有值时才添加到签名参数中
-  if (redirectUrl && redirectUrl.trim()) {
-    requestPayload.redirect_url = redirectUrl.trim()
-  }
-  
   const signSource = buildSignSource(requestPayload)
   const primarySig = epusdtSign(requestPayload)
   const altSigToken = epusdtSign(requestPayload, env.EPUSDT_TOKEN, 'amp_token')
   const altSigKey = epusdtSign(requestPayload, env.EPUSDT_TOKEN, 'amp_key')
-  
-  // 构建请求体，确保与签名参数一致
-  let body: any = {
+  let body = {
     order_id: requestPayload.order_id,
     amount: requestPayload.amount,
     notify_url: requestPayload.notify_url,
+    redirect_url: redirectUrl,
     signature: primarySig,
-  }
-  // 只有当 redirect_url 有值时才添加到请求体中
-  if (requestPayload.redirect_url) {
-    body.redirect_url = requestPayload.redirect_url
   }
 
   try {
@@ -224,24 +207,9 @@ export async function createEpusdtTransactionForUser(params: { userId: number; a
         try { ac.abort() } catch (_) {}
       }, 10000)
       try {
-        // 根据 Epusdt API 文档，不需要在请求头中传递 token
-        // token (api_auth_token) 只用于生成签名，签名在请求体中传递
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        }
-
-        try {
-          console.info('[epusdt:create] outgoing request', {
-            url: `${baseUrl}/api/v1/order/create-transaction`,
-            headers,
-            body,
-          })
-        } catch (_) {}
-
         const res = await fetch(`${baseUrl}/api/v1/order/create-transaction`, {
           method: 'POST',
-          headers,
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify(body),
           signal: ac.signal,
         })
@@ -388,7 +356,7 @@ export function getEpusdtPaymentUrl(record: Pick<EpusdtTradeRecord, 'payment_url
     if (baseUrl) {
       // 检查 baseUrl 是否已经包含端口，如果没有才添加 :8000
       const hasPort = /:\d+$/.test(baseUrl)
-      const fullUrl = hasPort ? baseUrl : `${baseUrl}:8000`
+      const fullUrl = hasPort ? baseUrl : `${baseUrl}:8001`
       return `${fullUrl}/pay/checkout-counter/${record.trade_id}`
     }
   }
