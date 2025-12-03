@@ -214,13 +214,14 @@ export async function createEpusdtTransactionForUser(params: { userId: number; a
       }, 10000)
       try {
         // Epusdt API 需要在请求头中传递 token
-        // 根据实际错误信息，API 期望在请求头中有 token
-        // 根据常见的 API 实现，通常使用 Authorization 头
+        // 根据错误信息变化（从"请求未携带token"到"token格式错误"），说明需要 token 但格式不对
+        // 尝试使用常见的 API token 头名称
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
           Accept: 'application/json',
-          // 尝试 Bearer 格式（最常见的 API 认证格式）
-          'Authorization': `Bearer ${token}`,
+          // Epusdt 可能使用 X-Api-Token 或 token 作为请求头名称
+          'X-Api-Token': token,
+          'token': token,
         }
         
         const res = await fetch(`${baseUrl}/api/v1/order/create-transaction`, {
