@@ -17,6 +17,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "@/components/ui/use-toast"
 import { Plus, Package, Edit, Trash2, CheckCircle2, XCircle, ArrowUp, ArrowDown } from "lucide-react"
@@ -29,6 +39,14 @@ type ApiProductKey = {
   sold_to_user_id: number | null
   sold_at: string | null
   created_at: string
+}
+
+type ConfirmAction = {
+  title: string
+  description?: string
+  confirmText?: string
+  cancelText?: string
+  onConfirm: () => Promise<void> | void
 }
 
 async function fetchJSON<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
@@ -67,6 +85,24 @@ export default function ProductsPage() {
   const [editingKeyValue, setEditingKeyValue] = useState("")
   const [selectedCategory, setSelectedCategory] = useState<string>("")
   const [selectedSubCategory, setSelectedSubCategory] = useState<string>("")
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
+  const [confirmBusy, setConfirmBusy] = useState(false)
+
+  const openConfirm = (config: ConfirmAction) => setConfirmAction(config)
+  const closeConfirm = () => {
+    if (confirmBusy) return
+    setConfirmAction(null)
+  }
+  const runConfirm = async () => {
+    if (!confirmAction) return
+    setConfirmBusy(true)
+    try {
+      await confirmAction.onConfirm()
+    } finally {
+      setConfirmBusy(false)
+      setConfirmAction(null)
+    }
+  }
 
   async function loadProducts() {
     setLoading(true)
@@ -130,35 +166,42 @@ export default function ProductsPage() {
     await saveOrder(next)
   }
 
-  const handleDeleteProduct = async (product: ApiProduct) => {
-    if (Number(product.is_active) === 1) {
-      toast({ title: '无法删除', description: '请先下架该商品后再删除' })
-      return
-    }
-    if (!confirm(`确认删除商品「${product.name}」吗？该操作不可恢复。`)) return
+  const performDeleteProduct = async (product: ApiProduct, force = false) => {
     try {
-      let res = await fetch(`/api/products/${product.id}`, { method: 'DELETE' })
-      if (!res.ok) {
-        const text = await res.text()
-        try {
-          const json = JSON.parse(text)
-          if (json?.error === 'has_keys') {
-            const sure = confirm('该商品存在关联的密钥（可能包含已售出）。\n\n是否继续删除所有未售密钥并删除商品？（已售出密钥与订单将保留）')
-            if (!sure) return
-            res = await fetch(`/api/products/${product.id}?force=true`, { method: 'DELETE' })
-          } else {
-            throw new Error(text)
-          }
-        } catch (_) {
-          throw new Error(text)
-        }
-      }
+      const url = force ? `/api/products/${product.id}?force=true` : `/api/products/${product.id}`
+      let res = await fetch(url, { method: 'DELETE' })
       if (!res.ok) throw new Error(await res.text())
       toast({ title: '删除成功', description: `${product.name} 已删除` })
       await loadProducts()
     } catch (e: any) {
+      const text = e?.message || '网络错误'
+      try {
+        const json = JSON.parse(text)
+        if (json?.error === 'has_keys' && !force) {
+          openConfirm({
+            title: '确认删除含密钥的商品？',
+            description: '该商品存在关联的密钥（可能包含已售出）。继续删除将移除所有未售密钥并删除商品（已售出密钥与订单保留）。',
+            confirmText: '继续删除',
+            onConfirm: () => performDeleteProduct(product, true),
+          })
+          return
+        }
+      } catch (_) {}
       toast({ title: '删除失败', description: e?.message || '网络错误' })
     }
+  }
+
+  const handleDeleteProduct = (product: ApiProduct) => {
+    if (Number(product.is_active) === 1) {
+      toast({ title: '无法删除', description: '请先下架该商品后再删除' })
+      return
+    }
+    openConfirm({
+      title: `确认删除商品「${product.name}」吗？`,
+      description: '该操作不可恢复。',
+      confirmText: '确认删除',
+      onConfirm: () => performDeleteProduct(product),
+    })
   }
 
   const startEditKey = (id: number, value: string) => {
@@ -326,21 +369,27 @@ export default function ProductsPage() {
       toast({ title: '操作提示', description: '请选择要删除的未售出密钥' })
       return
     }
-    if (!confirm('确认删除选中的未售出密钥吗？该操作不可恢复。')) return
-    try {
-      const res = await fetch(`/api/products/${inventoryProduct.id}/keys`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: inventorySelected }),
-      })
-      if (!res.ok) throw new Error(await res.text())
-      const json = await res.json()
-      toast({ title: '删除成功', description: `已删除 ${json.data?.deleted ?? inventorySelected.length} 条密钥` })
-      setInventorySelected([])
-      await loadInventory({ page: 1 })
-    } catch (e: any) {
-      toast({ title: '删除失败', description: e?.message || '无法删除密钥' })
-    }
+    openConfirm({
+      title: '确认删除选中的未售出密钥吗？',
+      description: '该操作不可恢复。',
+      confirmText: '确认删除',
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/products/${inventoryProduct.id}/keys`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: inventorySelected }),
+          })
+          if (!res.ok) throw new Error(await res.text())
+          const json = await res.json()
+          toast({ title: '删除成功', description: `已删除 ${json.data?.deleted ?? inventorySelected.length} 条密钥` })
+          setInventorySelected([])
+          await loadInventory({ page: 1 })
+        } catch (e: any) {
+          toast({ title: '删除失败', description: e?.message || '无法删除密钥' })
+        }
+      },
+    })
   }
 
   const toggleInventorySelection = (id: number, checked: boolean) => {
@@ -360,9 +409,7 @@ export default function ProductsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inventoryDialogOpen, inventoryProduct])
 
-  const handleDeactivate = async (product: ApiProduct) => {
-    if (!product) return
-    if (!confirm(`确定要下架商品「${product.name}」吗？`)) return
+  const performDeactivate = async (product: ApiProduct) => {
     try {
       const res = await fetch(`/api/products/${product.id}`, {
         method: 'PATCH',
@@ -377,9 +424,17 @@ export default function ProductsPage() {
     }
   }
 
-  const handleActivate = async (product: ApiProduct) => {
+  const handleDeactivate = (product: ApiProduct) => {
     if (!product) return
-    if (!confirm(`确定要上架商品「${product.name}」吗？`)) return
+    openConfirm({
+      title: `确定要下架商品「${product.name}」吗？`,
+      description: '下架后用户将无法购买该商品。',
+      confirmText: '确认下架',
+      onConfirm: () => performDeactivate(product),
+    })
+  }
+
+  const performActivate = async (product: ApiProduct) => {
     try {
       const res = await fetch(`/api/products/${product.id}`, {
         method: 'PATCH',
@@ -394,8 +449,35 @@ export default function ProductsPage() {
     }
   }
 
+  const handleActivate = (product: ApiProduct) => {
+    if (!product) return
+    openConfirm({
+      title: `确定要上架商品「${product.name}」吗？`,
+      description: '上架后用户将可以购买该商品。',
+      confirmText: '确认上架',
+      onConfirm: () => performActivate(product),
+    })
+  }
+
   return (
     <div className="space-y-6">
+      <AlertDialog open={!!confirmAction} onOpenChange={(open) => (!open ? closeConfirm() : null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmAction?.title}</AlertDialogTitle>
+            {confirmAction?.description ? (
+              <AlertDialogDescription>{confirmAction.description}</AlertDialogDescription>
+            ) : null}
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={confirmBusy}>{confirmAction?.cancelText ?? '取消'}</AlertDialogCancel>
+            <AlertDialogAction onClick={runConfirm} disabled={confirmBusy}>
+              {confirmAction?.confirmText ?? '确认'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">商品与库存管理</h2>

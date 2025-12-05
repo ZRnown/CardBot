@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { toast } from "@/components/ui/use-toast"
 
 export default function LoginPage() {
   const [username, setUsername] = useState("")
@@ -33,15 +34,18 @@ export default function LoginPage() {
       const data = await res.json()
 
       if (data.success) {
+        toast({ title: "登录成功", description: `欢迎回来，${username}` })
         // 设置登录状态到localStorage
         localStorage.setItem("isLoggedIn", "true")
         localStorage.setItem("adminUsername", username)
         router.push("/admin")
       } else {
         setError(data.error || "用户名或密码错误")
+        toast({ title: "登录失败", description: data.error || "用户名或密码错误" })
       }
     } catch (err) {
       setError("网络错误，请稍后重试")
+      toast({ title: "登录失败", description: "网络错误，请稍后重试" })
     } finally {
       setLoading(false)
     }
